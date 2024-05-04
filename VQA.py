@@ -342,8 +342,8 @@ class AnnotationWindow(tk.Toplevel):
             text_x = x1 + 10
             text_y = y1 + 10
 
-            self.image_canvas.create_rectangle(x1, y1, x2, y2, outline="red", width=2, tags="bbox")
-            self.image_canvas.create_text(text_x, text_y, text=bbox_text, fill="yellow", font=("Helvetica", "10", "bold"), tags="bbox")
+            self.image_canvas.create_rectangle(x1, y1, x2, y2, outline="blue", width=2, tags="bbox")
+            self.image_canvas.create_text(text_x, text_y, text=bbox_text, fill="blue", font=("Helvetica", "10", "bold"), tags="bbox")
 
         self.image_canvas.update()
 
@@ -367,12 +367,13 @@ class AnnotationWindow(tk.Toplevel):
         self.image_canvas.delete("bbox")
         for bbox in self.bboxes:
             x1, y1, x2, y2 = [int(bbox['bbox2d'][i] * (self.scale_x if i % 2 == 0 else self.scale_y)) for i in range(4)]
-            box_color = "yellow" if bbox in self.selected_bboxes else "red"
+            box_color = "yellow" if bbox in self.selected_bboxes else "blue"
+            text_color = "yellow" if bbox in self.selected_bboxes else "blue"
             bbox_text = f"{bbox['type']} {bbox['count']}"
             text_x = x1 + 10
             text_y = y1 + 10
             self.image_canvas.create_rectangle(x1, y1, x2, y2, outline=box_color, width=2, tags="bbox")
-            self.image_canvas.create_text(text_x, text_y, text=bbox_text, fill="yellow", font=("Helvetica", "10", "bold"), tags="bbox")
+            self.image_canvas.create_text(text_x, text_y, text=bbox_text, fill=text_color, font=("Helvetica", "10", "bold"), tags="bbox")
 
         # 显式更新画布以反映变更
         self.image_canvas.update()
