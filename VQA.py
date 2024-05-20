@@ -3,7 +3,12 @@ from tkinter import filedialog, messagebox, simpledialog
 import os
 import cv2
 from PIL import Image, ImageTk
+import re
 from setting import save_settings, load_settings
+
+def natural_sort_key(s):
+    # 使用正则表达式分割字符串中的数字部分和非数字部分
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
 class AnnotationApp(tk.Tk):
     def __init__(self):
@@ -108,7 +113,18 @@ class AnnotationApp(tk.Tk):
         """加载图像文件夹中的所有图像文件到列表"""
         all_files = [os.path.join(directory, f) for f in os.listdir(directory)
                     if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        self.image_files = sorted(all_files)  # 这里添加sorted来确保排序
+        sorted_files = sorted(all_files, key=natural_sort_key)  # 确保文件按顺序加载
+        self.image_files = self.exclude_annotated_files(sorted_files)  # 排除已经标注的文件
+
+    def exclude_annotated_files(self, files):
+        """排除已经标注的文件"""
+        annotated_files = []
+        for file in files:
+            file_name = os.path.splitext(os.path.basename(file))[0]
+            label_path = os.path.join(os.path.dirname(self.rope3d_path), "Labels", f"{file_name}.txt")
+            if not os.path.exists(label_path):  # 只保留没有标注的文件
+                annotated_files.append(file)
+        return annotated_files
 
     def create_folders(self, rope3d_path):
         # 获取Rope3D路径的父目录
@@ -232,7 +248,7 @@ class AnnotationWindow(tk.Toplevel):
         try:
             self.current_index = self.image_files.index(image_path)
         except ValueError:
-            messagebox.showerror("错误", "所选文件不在文件列表中")
+            messagebox.showerror("错误", "所选文件不在文件列表中，可能已经标注过此文件")
             return
 
         # 清除画布上的所有内容
