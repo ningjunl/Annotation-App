@@ -114,17 +114,8 @@ class AnnotationApp(tk.Tk):
         all_files = [os.path.join(directory, f) for f in os.listdir(directory)
                     if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         sorted_files = sorted(all_files, key=natural_sort_key)  # 确保文件按顺序加载
-        self.image_files = self.exclude_annotated_files(sorted_files)  # 排除已经标注的文件
+        self.image_files = sorted_files
 
-    def exclude_annotated_files(self, files):
-        """排除已经标注的文件"""
-        annotated_files = []
-        for file in files:
-            file_name = os.path.splitext(os.path.basename(file))[0]
-            label_path = os.path.join(os.path.dirname(self.rope3d_path), "Labels", f"{file_name}.txt")
-            if not os.path.exists(label_path):  # 只保留没有标注的文件
-                annotated_files.append(file)
-        return annotated_files
 
     def create_folders(self, rope3d_path):
         # 获取Rope3D路径的父目录
@@ -248,7 +239,7 @@ class AnnotationWindow(tk.Toplevel):
         try:
             self.current_index = self.image_files.index(image_path)
         except ValueError:
-            messagebox.showerror("错误", "所选文件不在文件列表中，可能已经标注过此文件")
+            messagebox.showerror("错误", "所选文件不在文件列表中")
             return
 
         # 清除画布上的所有内容
@@ -262,11 +253,52 @@ class AnnotationWindow(tk.Toplevel):
         self.image = cv2.imread(image_path)
         if self.image is not None:
             self.display_image()
+            self.load_existing_annotations()  # 加载已有标注
         else:
             messagebox.showerror("错误", "无法加载图像")
         
         # 更新设置
         self.save_current_settings()
+
+    def load_existing_annotations(self):
+        print("Attempting to load existing annotations...")
+        parent_directory = os.path.dirname(self.parent.rope3d_path)
+        parent_directory = os.path.dirname(self.parent.rope3d_path)
+        question_path = os.path.join(parent_directory, "Questions", f"{self.file_name}.txt")
+        answer_path = os.path.join(parent_directory, "Answers", f"{self.file_name}.txt")
+        label_path = os.path.join(parent_directory, "Labels", f"{self.file_name}.txt")
+
+        # 加载问题
+        if os.path.exists(question_path):
+            with open(question_path, 'r') as q_file:
+                question = q_file.read().strip()
+                self.question_entry.insert("1.0", question)
+
+        # 加载答案
+        if os.path.exists(answer_path):
+            with open(answer_path, 'r') as a_file:
+                answer = a_file.read().strip()
+                self.answer_entry.insert("1.0", answer)        
+
+        if os.path.exists(label_path):
+            with open(label_path, 'r') as file:
+                self.selected_bboxes = []
+                for line in file:
+                    parts = line.strip().split()
+                    bbox_data = {
+                        "type": parts[0],
+                        "truncated": int(parts[1]),
+                        "occluded": int(parts[2]),
+                        "angle": float(parts[3]),
+                        "bbox2d": [float(parts[4]), float(parts[5]), float(parts[6]), float(parts[7])],
+                        "dimensions": [float(parts[8]), float(parts[9]), float(parts[10])],
+                        "position": [float(parts[11]), float(parts[12]), float(parts[13])],
+                        "rotation_y": float(parts[14])
+                    }
+                    self.selected_bboxes.append(bbox_data)
+                print("Loaded existing annotations.")
+                print(self.selected_bboxes)
+        self.redraw_bboxes()  # Redraw bounding boxes based on loaded data
 
     def save_current_settings(self):
         # 更新设置并保存到文件
@@ -278,52 +310,45 @@ class AnnotationWindow(tk.Toplevel):
         save_settings(settings)
 
     def display_image(self):
-        if self.image is not None:
-            # 确保画布尺寸已更新
-            self.update_idletasks()
-            canvas_width = self.image_canvas.winfo_width()
-            canvas_height = self.image_canvas.winfo_height()
+    
+        # 确保画布尺寸已更新
+        self.update_idletasks()
+        canvas_width = self.image_canvas.winfo_width()
+        canvas_height = self.image_canvas.winfo_height()
 
-            # 转换图像色彩空间
-            image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
-            image_pil = Image.fromarray(image)
+        # 转换图像色彩空间
+        image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
+        image_pil = Image.fromarray(image)
 
-            # 保持宽高比调整图像大小
-            original_width, original_height = image_pil.size
-            self.scale_x = canvas_width / original_width
-            self.scale_y = canvas_height / original_height
+        # 保持宽高比调整图像大小
+        original_width, original_height = image_pil.size
+        self.scale_x = canvas_width / original_width
+        self.scale_y = canvas_height / original_height
 
-            new_width = int(original_width * self.scale_x)
-            new_height = int(original_height * self.scale_y)
-            image_pil = image_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        new_width = int(original_width * self.scale_x)
+        new_height = int(original_height * self.scale_y)
+        image_pil = image_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-            # 创建PhotoImage并居中显示
-            self.photo_image = ImageTk.PhotoImage(image_pil)
-            self.image_canvas.create_image(canvas_width // 2, canvas_height // 2, image=self.photo_image, anchor=tk.CENTER)
+        # 创建PhotoImage并居中显示
+        self.photo_image = ImageTk.PhotoImage(image_pil)
+        self.image_canvas.create_image(canvas_width // 2, canvas_height // 2, image=self.photo_image, anchor=tk.CENTER)
 
-            # 加载边界框
-            self.load_bboxes()
-            self.draw_bboxes()  # 在调整图像大小后绘制边界框
+        # 加载边界框
+        self.load_bboxes()
+        self.draw_bboxes()  # 在调整图像大小后绘制边界框
      
     def load_bboxes(self):
         bboxes = []
-        self.bbox_counts = {}  # 字典用于计数每个类型的框
+        
         label_file = os.path.join(self.parent.rope3d_path, f"{self.file_name}.txt")
         print("Attempting to load bboxes from:", label_file)
         if os.path.exists(label_file):
             with open(label_file, 'r') as file:
                 for line in file:
                     parts = line.strip().split()
-                    if len(parts) >= 15:  # 确保有足够的数据来构成一个完整的边界框
-                        bbox_type = parts[0]
-                        if bbox_type in self.bbox_counts:
-                            self.bbox_counts[bbox_type] += 1
-                        else:
-                            self.bbox_counts[bbox_type] = 1
-
+                    if len(parts) >= 14: 
                         bbox_data = {
                             "type": parts[0],
-                            "count": self.bbox_counts[bbox_type],  # 为每个框添加计数
                             "truncated": int(parts[1]),
                             "occluded": int(parts[2]),
                             "angle": float(parts[3]),
@@ -333,13 +358,13 @@ class AnnotationWindow(tk.Toplevel):
                             "rotation_y": float(parts[14])
                         }
                         bboxes.append(bbox_data)
-                    print("已添加框", bbox_type + str(self.bbox_counts[bbox_type]))
+                    print(f"已添加框{bbox_data['type']}到bboxes列表")
         else:
             print("Label file does not exist:", label_file)
             messagebox.showerror("错误", "Labels文件夹中没有对应label，请检查路径设置")
 
         if bboxes:
-            print("Loaded bboxes:")
+            print("Loaded bboxes.")
         else:
             print("No bboxes loaded.")
         self.bboxes = bboxes  # 确保始终设置self.bboxes，即使为空列表
@@ -354,7 +379,7 @@ class AnnotationWindow(tk.Toplevel):
 
         for bbox in self.bboxes:
             x1, y1, x2, y2 = [bbox['bbox2d'][i] * (self.scale_x if i % 2 == 0 else self.scale_y) for i in range(4)]
-            bbox_text = f"{bbox['type']} {bbox['count']}"  # 修改显示文本以包含编号
+            bbox_text = f"{bbox['type']}"  
             text_x = x1 + 10
             text_y = y1 + 10
 
@@ -385,7 +410,7 @@ class AnnotationWindow(tk.Toplevel):
             x1, y1, x2, y2 = [int(bbox['bbox2d'][i] * (self.scale_x if i % 2 == 0 else self.scale_y)) for i in range(4)]
             box_color = "yellow" if bbox in self.selected_bboxes else "blue"
             text_color = "yellow" if bbox in self.selected_bboxes else "blue"
-            bbox_text = f"{bbox['type']} {bbox['count']}"
+            bbox_text = f"{bbox['type']}"
             text_x = x1 + 10
             text_y = y1 + 10
             self.image_canvas.create_rectangle(x1, y1, x2, y2, outline=box_color, width=2, tags="bbox")
