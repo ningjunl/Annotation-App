@@ -424,8 +424,10 @@ class AnnotationWindow(tk.Toplevel):
             messagebox.showerror("错误", "文件名不能为空。")
             return
         if not self.selected_bboxes:
-            messagebox.showerror("错误", "没有选中任何边界框。")
-            return
+            # 弹出确认对话框
+            response = messagebox.askyesno("确认", "没有选中任何边界框，是否继续保存空标注？")
+            if not response:
+                return  # 用户选择不保存，直接返回
 
         question = self.question_entry.get("1.0", tk.END).strip()
         answer = self.answer_entry.get("1.0", tk.END).strip()
@@ -440,10 +442,12 @@ class AnnotationWindow(tk.Toplevel):
         parent_directory = os.path.dirname(self.parent.rope3d_path)
         question_path = os.path.join(parent_directory, "Questions", f"{self.file_name}.txt")
         answer_path = os.path.join(parent_directory, "Answers", f"{self.file_name}.txt")
+        label_path = os.path.join(parent_directory, "Labels", f"{self.file_name}.txt")
 
         # 确保目录存在
         os.makedirs((os.path.dirname(question_path)), exist_ok=True)
         os.makedirs((os.path.dirname(answer_path)), exist_ok=True)
+        os.makedirs((os.path.dirname(label_path)), exist_ok=True)
 
         # 写入问题和答案，每次保存都覆盖旧数据
         with open(question_path, "w") as q_file:
@@ -451,40 +455,31 @@ class AnnotationWindow(tk.Toplevel):
         with open(answer_path, "w") as a_file:
             a_file.write(answer + "\n")
 
-        error_occurred = False
-        for bbox in self.selected_bboxes:
-            try:
-                self.save_single_bbox_annotation(bbox, parent_directory)
-            except Exception as e:
-                messagebox.showerror("保存错误", f"无法保存文件：{e}")
-                error_occurred = True
-                break
+        # 清空标签文件，然后写入当前会话的所有边界框
+        with open(label_path, "w") as l_file:
+            for bbox in self.selected_bboxes:
+                bbox_data = [
+                    bbox["type"],
+                    bbox["truncated"],
+                    bbox["occluded"],
+                    bbox["angle"],
+                    *bbox["bbox2d"],
+                    *bbox["dimensions"],
+                    *bbox["position"],
+                    bbox["rotation_y"]
+                ]
+                l_file.write(" ".join(map(str, bbox_data)) + "\n")
 
-        if not error_occurred:
-            self.status_label.config(text="标注已成功保存！")
-            self.status_label.place(relx=0.5, rely=0.5, anchor="center")
-            self.after(3000, self.clear_status_message)
+        self.status_label.config(text="标注已成功保存！")
+        self.status_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.after(3000, self.clear_status_message)  # 3秒后清除状态消息
 
     def clear_status_message(self):
         """清除状态消息"""
         self.status_label.config(text="")
         self.status_label.place_forget()  # 可以使用 place_forget 来隐藏标签
 
-    def save_single_bbox_annotation(self, bbox, parent_directory):
-        label_path = os.path.join(parent_directory, "Labels", f"{self.file_name}.txt")
-        os.makedirs((os.path.dirname(label_path)), exist_ok=True)
-        with open(label_path, "a") as l_file:  # 使用 "a" 模式追加数据
-            bbox_data = [
-                bbox["type"],
-                bbox["truncated"],
-                bbox["occluded"],
-                bbox["angle"],
-                *bbox["bbox2d"],
-                *bbox["dimensions"],
-                *bbox["position"],
-                bbox["rotation_y"]
-            ]
-            l_file.write(" ".join(map(str, bbox_data)) + "\n")
+
 
 
     def prev_image(self):
